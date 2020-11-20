@@ -20,26 +20,43 @@
         context = canvas.node().getContext("2d");
 
     var timeSlider = document.getElementById('time_slider')
-    console.log(timeSlider)
     var timeVal = document.getElementById('time_val')
 
     var path = d3.geoPath()
         .projection(projection)
         .context(context);
 
+    function renderBlank() {
+        context.clearRect(0, 0, WIDTH, HEIGHT);
+        context.globalAlpha = 0.5;
+        context.beginPath(), path(sphere), context.fillStyle = "#fff", context.fill();
+        context.beginPath(), path(graticule), context.strokeStyle = "#ccc", context.stroke();
+        context.beginPath(), path(sphere), context.stroke();
+
+    }
+
+    renderBlank()
 
 
     function attachEventListeners() {
+
         let drawBlocksButton = document.getElementById('draw-blocks')
         drawBlocksButton.addEventListener('click', drawBlocks)
 
-        //timeSlider.addEventListener('change', draw)
     }
+
 
 
     function drawBlocks() {
         let blocks_path = "./chn_blocks_simp.geojson"
         let poles_path = "./block_poles_eur_rel.csv"
+
+        //let range = (start, stop, step = 1) => Array(stop -
+        //start).fill(start).map((x, y) => x + y * step)
+        function range(start, stop, step = 1) {
+            return Array(Math.ceil((stop - start) / step + 1)).fill(start).map((x, y) => x + y * step);
+        }
+        const blockTimes = range(parseFloat(timeSlider.min), parseFloat(timeSlider.max), parseFloat(timeSlider.step))
 
         Promise.all([
             d3.json(blocks_path),
@@ -51,53 +68,59 @@
                         ring.reverse();
                     });
                 });
+
+                var poles = data[1].reduce(function (obj, x) {
+                    obj[x.mov] = x;
+                    return obj;
+                }, {});
+
+                var blocksAtTime = rotate_all_blocks(data[0], poles, blockTimes)
+
                 //drawChart(geodata, poles);
-                drawChart(data[0], data[1])
+                drawChart(blocksAtTime);
+
+                timeSlider.addEventListener("input", function () {
+                    drawChart(blocksAtTime)
+                });
             });
     };
 
 
-    function drawChart(geodata, poles) {
 
-        function render(geodata) {
+    function rotate_all_blocks(geodata_zero, poles, times) {
+
+        let blocksAtTime = times.reduce(function (obj, time) {
+            obj[time.toString()] = rotate_blocks(geodata_zero, poles, time);
+            return obj;
+        }, {});
+
+        return blocksAtTime
+    }
+
+    function drawChart(blocksAtTime) {
+
+        function render(blocksAtTime) {
             context.clearRect(0, 0, WIDTH, HEIGHT);
             context.globalAlpha = 0.5;
             context.beginPath(), path(sphere), context.fillStyle = "#fff", context.fill();
             context.beginPath(), path(graticule), context.strokeStyle = "#ccc", context.stroke();
             context.beginPath(), path(sphere), context.stroke();
 
-            var pole_dict = poles.reduce(function (obj, x) {
-                obj[x.mov] = x;
-                return obj;
-            }, {});
+            var geodata = blocksAtTime[timeSlider.value]
 
-            if (timeVal.value == "") {
-                var rot_time = 0.
-            } else {
-                var rot_time = parseFloat(timeVal.value)
-            }
-
-            let t0 = performance.now()
-            let rotated_geodata = rotate_blocks(geodata, pole_dict, rot_time)
-            let t1 = performance.now()
-            let rotate_time = t1 - t0
-            // console.log(`rotating blocks took ${rotate_time} ms`)
-
-            let t2 = performance.now()
-            rotated_geodata.features.forEach(function (d, i) {
+            geodata.features.forEach(function (d, i) {
                 context.beginPath(), path(d), context.fillStyle = d.properties.color, context.fill();
                 context.beginPath(), path(d), context.strokeStyle = d.properties.color, context.stroke();
             });
-            let t3 = performance.now()
-            let plot_time = t3 - t2
-            // console.log(`plotting stuff took ${plot_time} ms`)
         }
 
+
         return d3.select(context.canvas)
+
             .call(zoom(projection)
-                .on("zoom.render", () => render(geodata))
+                .on("zoom.render", () => render(blocksAtTime))
             )
-            .call(() => render(geodata))
+            .call(() => render(blocksAtTime))
             .node();
     }
 
