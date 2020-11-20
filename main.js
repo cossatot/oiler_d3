@@ -19,6 +19,9 @@
         height = canvas.property("height"),
         context = canvas.node().getContext("2d");
 
+    var timeSlider = document.getElementById('time_slider')
+    console.log(timeSlider)
+    var timeVal = document.getElementById('time_val')
 
     var path = d3.geoPath()
         .projection(projection)
@@ -29,26 +32,32 @@
     function attachEventListeners() {
         let drawBlocksButton = document.getElementById('draw-blocks')
         drawBlocksButton.addEventListener('click', drawBlocks)
+
+        //timeSlider.addEventListener('change', draw)
     }
 
 
     function drawBlocks() {
-        let blocks_path = "./chn_blocks_simp_.geojson"
+        let blocks_path = "./chn_blocks_simp.geojson"
+        let poles_path = "./block_poles_eur_rel.csv"
 
-        d3.json(blocks_path)
-            .then(
-                function (geodata) {
-                    geodata.features.forEach(function (d, i) {
-                        d.geometry.coordinates.forEach(function (ring) {
-                            ring.reverse();
-                        });
+        Promise.all([
+            d3.json(blocks_path),
+            d3.csv(poles_path)
+        ]).then(
+            function (data) {
+                data[0].features.forEach(function (d, i) {
+                    d.geometry.coordinates.forEach(function (ring) {
+                        ring.reverse();
                     });
-                    drawChart(geodata);
                 });
+                //drawChart(geodata, poles);
+                drawChart(data[0], data[1])
+            });
     };
 
 
-    function drawChart(geodata) {
+    function drawChart(geodata, poles) {
 
         function render(geodata) {
             context.clearRect(0, 0, WIDTH, HEIGHT);
@@ -57,11 +66,31 @@
             context.beginPath(), path(graticule), context.strokeStyle = "#ccc", context.stroke();
             context.beginPath(), path(sphere), context.stroke();
 
+            var pole_dict = poles.reduce(function (obj, x) {
+                obj[x.mov] = x;
+                return obj;
+            }, {});
 
-            geodata.features.forEach(function (d, i) {
+            if (timeVal.value == "") {
+                var rot_time = 0.
+            } else {
+                var rot_time = parseFloat(timeVal.value)
+            }
+
+            let t0 = performance.now()
+            let rotated_geodata = rotate_blocks(geodata, pole_dict, rot_time)
+            let t1 = performance.now()
+            let rotate_time = t1 - t0
+            // console.log(`rotating blocks took ${rotate_time} ms`)
+
+            let t2 = performance.now()
+            rotated_geodata.features.forEach(function (d, i) {
                 context.beginPath(), path(d), context.fillStyle = d.properties.color, context.fill();
                 context.beginPath(), path(d), context.strokeStyle = d.properties.color, context.stroke();
             });
+            let t3 = performance.now()
+            let plot_time = t3 - t2
+            // console.log(`plotting stuff took ${plot_time} ms`)
         }
 
         return d3.select(context.canvas)
